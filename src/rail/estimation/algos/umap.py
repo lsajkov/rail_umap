@@ -5,6 +5,7 @@ from rail.core.data import QPHandle, TableHandle, Hdf5Handle
 from rail.core.common_params import SHARED_PARAMS
 import qp
 import umap
+import pandas as pd
 
 def _computecolordata(df, ref_column_name, column_names, only_color):
     """
@@ -59,7 +60,7 @@ def train_umap(
     embedding : np.ndarray
         Low-dimensional embedding.
     """
-    umap_model = umap.UMAP(
+    umap_obj = umap.UMAP(
         n_neighbors=n_neighbors,
         min_dist=min_dist,
         metric=metric,
@@ -69,8 +70,8 @@ def train_umap(
         n_epochs=n_epochs,
         random_state=random_state,
     )
-    embedding = umap_model.fit_transform(X)
-    return umap_model, embedding
+    umap_model = umap_obj.fit(X)
+    return umap_model
 
 
 class UMAPTrainer(CatInformer):
@@ -140,7 +141,7 @@ class UMAPTrainer(CatInformer):
         )
 
         # Train UMAP
-        umap_model, embedding = train_umap(
+        umap_model = train_umap(
             X,
             n_neighbors=self.config.n_neighbors,
             min_dist=self.config.min_dist,
@@ -154,8 +155,7 @@ class UMAPTrainer(CatInformer):
 
         # Store model (and optionally embedding + feature metadata)
         self.model = dict(
-            umap=umap_model,
-            embedding=embedding,           # handy for diagnostics; remove if you prefer
+            reducer=umap_model,         # handy for diagnostics; remove if you prefer
             bands=self.config.bands,
             ref_band=self.config.ref_band,
             only_colors=self.config.only_colors,
@@ -164,6 +164,27 @@ class UMAPTrainer(CatInformer):
         self.add_data("model", self.model)
 
 
+    def umap_transform(self, umapdf, model):
+        
+        # Replace nondetects exactly like KNN example
+        for col in self.config.bands:
+            if np.isnan(self.config.nondetect_val):  # pragma: no cover
+                umapdf.loc[np.isnan(umapdf[col]), col] = np.float32(self.config.mag_limits[col])
+            else:
+                umapdf.loc[np.isclose(umapdf[col], self.config.nondetect_val), col] = np.float32(
+                    self.config.mag_limits[col]
+                )
+        # Compute color feature matrix using the SAME helper signature/pattern
+        X = _computecolordata(
+            umapdf,
+            self.config.ref_band,
+            self.config.bands,
+            self.config.only_colors,
+        )
+
+        embedding = model.transform(X)
+
+        return embedding
 
 
 
