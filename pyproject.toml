@@ -16,7 +16,12 @@ classifiers = [
 ]
 dynamic = ["version"]
 
-dependencies = []
+dependencies = [
+	     "numpy",
+	     "pz-rail-base>=1.1.4",
+	     "scikit-learn",
+	     "scipy",
+	     "umap-learn"]
 
 # On a mac, install optional dependencies with `pip install '.[dev]'` (include the single quotes)
 [project.optional-dependencies]
