@@ -3,9 +3,9 @@ from rail.core.data  import PqHandle
 from ceci.config     import StageParameter
 from photerr         import ErrorModel, ErrorParams
 
-class LsstRomanHscErrorModel(RailStage):
+class MultiSurveyErrorModel(RailStage):
     
-    name = "LsstRomanHscErrorModel"
+    name = "MultiSurveyErrorModel"
     
     inputs  = [("noiseless_catalog", PqHandle)]
     outputs = [("noisy_catalog",     PqHandle)]
