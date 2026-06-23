@@ -138,3 +138,6 @@ dask-worker-space/
 
 # tmp directory
 tmp/
+src/evaluation/output_evaluator.hdf5
+src/evaluation/single_distribution_summary_evaluator.hdf5
+src/evaluation/summary_evaluator.hdf5
