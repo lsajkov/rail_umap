@@ -11,7 +11,7 @@ from sklearn.neighbors import NearestNeighbors
 
 from numba import njit
 @njit
-def weighted_manhattan_linear(vec1, vec2):
+def manhattan_weighted_linear(vec1, vec2):
     
     n_bands = len(vec1) // 2
     
@@ -45,26 +45,26 @@ class UMAPEstimator(RailStage):
     
     config_options.update(dict(
         # UMAP parameters
-        n_neighbors_umap     = StageParameter(int, 80),
-        n_components         = StageParameter(int, 3),
-        ambient_metric_umap  = StageParameter(str, 'euclidean'),
-        n_epochs             = StageParameter(int, None),
+        n_neighbors_umap     = StageParameter(int,   80),
+        n_components         = StageParameter(int,   3),
+        ambient_metric_umap  = StageParameter(str,   'euclidean'),
+        n_epochs             = StageParameter(int,   None),
         learning_rate        = StageParameter(float, 1.0),
-        init                 = StageParameter(str, 'spectral'),
+        init                 = StageParameter(str,   'spectral'),
         min_dist             = StageParameter(float, 0.0),
         spread               = StageParameter(float, 1.0),
-        low_memory           = StageParameter(bool, True),
+        low_memory           = StageParameter(bool,  True),
         set_op_mix_ratio     = StageParameter(float, 1.0),
-        local_connectivity   = StageParameter(int, 1),
+        local_connectivity   = StageParameter(int,   1),
         repulsion_strength   = StageParameter(float, 1.0),
-        negative_sample_rate = StageParameter(int, 5),
+        negative_sample_rate = StageParameter(int,   5),
         transform_queue_size = StageParameter(float, 4.0),
-        metric_kwds          = StageParameter(dict, None),
-        target_n_neighbors   = StageParameter(int, -1),
-        target_metric_umap   = StageParameter(str, 'categorical'),
-        target_metric_kwds   = StageParameter(dict, None),
+        metric_kwds          = StageParameter(dict,  None),
+        target_n_neighbors   = StageParameter(int,   -1),
+        target_metric_umap   = StageParameter(str,   'categorical'),
+        target_metric_kwds   = StageParameter(dict,  None),
         target_weight        = StageParameter(float, 0.5),
-        transform_seed       = StageParameter(int, 42),
+        transform_seed       = StageParameter(int,   42),
         
         # k-nearest neighbor clustering parameters
         n_neighbors_knn      = StageParameter(int, 10),
@@ -85,7 +85,7 @@ class UMAPEstimator(RailStage):
             
             phot_error = self.get_data("training_phot_error")
             input_data = pd.concat([photometry, phot_error], axis = 1)
-            metric = weighted_manhattan_linear
+            metric = manhattan_weighted_linear
         
         else:
             metric = self.config.ambient_metric_umap
@@ -141,7 +141,7 @@ class UMAPEstimator(RailStage):
         
         photometry = self.get_data("estimation_photometry")
         
-        if reducer.metric == weighted_manhattan_linear:
+        if reducer.metric == manhattan_weighted_linear:
             
             phot_error = self.get_data("estimation_phot_error")
             input_data = pd.concat([photometry, phot_error], axis = 1)    
