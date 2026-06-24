@@ -7,8 +7,9 @@ from ceci.config import StageParameter
 import numpy as np
 import pandas as pd
 from umap import UMAP
-from sklearn.neighbors import NearestNeighbors
+from sklearn.neighbors import NearestNeighbors, KNeighborsRegressor
 
+### Define custom weighted Manhattan metric
 from numba import njit
 @njit
 def manhattan_weighted_linear(vec1, vec2):
@@ -18,6 +19,7 @@ def manhattan_weighted_linear(vec1, vec2):
     distance = 0.0
     for i in range(n_bands):
         w         = vec1[i + n_bands]**2 + vec2[i + n_bands]**2
+        w         = max(w, 1e-4) ### guard against division by zero
         distance += np.abs(vec1[i] - vec2[i])/w
 
     return distance
@@ -34,11 +36,11 @@ class UMAPEstimator(RailStage):
               ("estimation_photometry", PqHandle),
               ("estimation_phot_error", PqHandle)]
     
-    outputs = [("informed_reducer",     ModelHandle),
-               ("informed_knn",         ModelHandle),
-               ("informed_embedding",   PqHandle),
-               ("estimated_embedding", PqHandle),
-               ("estimated_photozs",   PqHandle)]
+    outputs = [("informed_reducer",       ModelHandle),
+               ("informed_kNN_regressor", ModelHandle),
+               ("informed_embedding",     PqHandle),
+               ("estimated_embedding",    PqHandle),
+               ("estimated_photozs",      PqHandle)]
     
     ### configuration
     config_options = RailStage.config_options.copy()
@@ -59,16 +61,19 @@ class UMAPEstimator(RailStage):
         repulsion_strength   = StageParameter(float, 1.0),
         negative_sample_rate = StageParameter(int,   5),
         transform_queue_size = StageParameter(float, 4.0),
-        # metric_kwds          = StageParameter(dict,  None),
+        metric_kwds          = StageParameter(dict,  {}),
         target_n_neighbors   = StageParameter(int,   -1),
         target_metric_umap   = StageParameter(str,   'categorical'),
-        # target_metric_kwds   = StageParameter(dict,  None),
+        target_metric_kwds   = StageParameter(dict,  {}),
         target_weight        = StageParameter(float, 0.5),
         transform_seed       = StageParameter(int,   42),
         
         ### k-nearest neighbor clustering parameters
         n_neighbors_knn      = StageParameter(int, 10),
-        metric_knn           = StageParameter(str, 'euclidean'),
+        metric_knn           = StageParameter(str, 'minkowski'),
+        metric_p_knn         = StageParameter(int, 2),
+        weighting_knn        = StageParameter(str, 'distance'),
+        algorithm_knn        = StageParameter(str, 'ball_tree'),
         
         ### random state
         random_state         = StageParameter(int, 42)
@@ -90,11 +95,15 @@ class UMAPEstimator(RailStage):
         else:
             metric = self.config.ambient_metric_umap
         
+        n_epochs           = None if self.config.n_epochs                == -1 else self.config.n_epochs
+        metric_kwds        = None if len(self.config.metric_kwds)        == 0  else self.config.metric_kwds
+        target_metric_kwds = None if len(self.config.target_metric_kwds) == 0 else self.config.target_metric_kwds
+        
         reducer = UMAP(
-            metric               = metric, 
+            metric               =             metric, 
             n_neighbors          = self.config.n_neighbors_umap, 
             n_components         = self.config.n_components, 
-            # n_epochs             = self.config.n_epochs, 
+            n_epochs             =             n_epochs, 
             learning_rate        = self.config.learning_rate, 
             init                 = self.config.init, 
             min_dist             = self.config.min_dist, 
@@ -105,10 +114,10 @@ class UMAPEstimator(RailStage):
             repulsion_strength   = self.config.repulsion_strength, 
             negative_sample_rate = self.config.negative_sample_rate, 
             transform_queue_size = self.config.transform_queue_size, 
-            # metric_kwds          = self.config.metric_kwds, 
+            metric_kwds          =             metric_kwds, 
             target_n_neighbors   = self.config.target_n_neighbors, 
             target_metric        = self.config.target_metric_umap, 
-            # target_metric_kwds   = self.config.target_metric_kwds, 
+            target_metric_kwds   =             target_metric_kwds, 
             target_weight        = self.config.target_weight, 
             transform_seed       = self.config.transform_seed, 
             random_state         = self.config.random_state
@@ -121,18 +130,33 @@ class UMAPEstimator(RailStage):
         
         redshift = self.get_data("training_redshift")
         
-        knn = NearestNeighbors(
+        kNN_regressor = KNeighborsRegressor(
             n_neighbors = self.config.n_neighbors_knn,
-            metric = self.config.metric_knn
-            )
-        knn.fit(embedding)
+            metric      = self.config.metric_knn,
+            p           = self.config.metric_p_knn,
+            weights     = self.config.weighting_knn,
+            algorithm   = self.config.algorithm_knn,
+        )
         
-        informed_knn = dict(
-            model = knn,
+        kNN_regressor.fit(embedding, redshift)
+        
+        informed_kNN_regressor = dict(
+            model = kNN_regressor,
             redshift = redshift
         )
         
-        self.add_data("informed_knn", informed_knn)
+        # knn = NearestNeighbors(
+        #     n_neighbors = self.config.n_neighbors_knn,
+        #     metric = self.config.metric_knn
+        #     )
+        # knn.fit(embedding)
+        
+        # informed_knn = dict(
+        #     model = knn,
+        #     redshift = redshift
+        # )
+        
+        self.add_data("informed_kNN_regressor", informed_kNN_regressor)
         
     
     def UMAP_estimator(self):
@@ -151,10 +175,11 @@ class UMAPEstimator(RailStage):
         
         estimated_embedding = reducer.transform(input_data)
         
-        informed_knn       = self.get_data("informed_knn")
+        informed_kNN_regressor = self.get_data("informed_kNN_regressor")
+        photozs                = informed_kNN_regressor["model"].predict(estimated_embedding)
         
-        _, indices = informed_knn["model"].kneighbors(estimated_embedding)
-        photozs = np.median(informed_knn["redshift"][indices], axis = 1)
+        # distances, indices = informed_knn["model"].kneighbors(estimated_embedding)
+        # photozs = np.median(informed_knn["redshift"][indices], axis = 1)
         
         self.add_data("estimated_embedding", pd.DataFrame(estimated_embedding))
         self.add_data("estimated_photozs",   pd.DataFrame({"z_phot": photozs}))
