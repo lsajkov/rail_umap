@@ -1,13 +1,15 @@
 ### Default RAIL imports
 from rail.core.stage import RailStage
-from rail.core.data import PqHandle, ModelHandle
+from rail.core.data import PqHandle, ModelHandle, QPHandle
 from ceci.config import StageParameter
+import qp
 
 ### Specific imports
 import numpy as np
 import pandas as pd
 from umap import UMAP
-from sklearn.neighbors import NearestNeighbors, KNeighborsRegressor
+from sklearn.neighbors import KNeighborsRegressor
+from scipy.stats import gaussian_kde
 
 ### Define custom weighted Manhattan metric
 from numba import njit
@@ -36,11 +38,12 @@ class UMAPEstimator(RailStage):
               ("estimation_photometry", PqHandle),
               ("estimation_phot_error", PqHandle)]
     
-    outputs = [("informed_reducer",       ModelHandle),
-               ("informed_kNN_regressor", ModelHandle),
-               ("informed_embedding",     PqHandle),
-               ("estimated_embedding",    PqHandle),
-               ("estimated_photozs",      PqHandle)]
+    outputs = [("informed_reducer",         ModelHandle),
+               ("informed_kNN_regressor",   ModelHandle),
+               ("informed_embedding",       PqHandle),
+               ("estimated_embedding",      PqHandle),
+               ("estimated_photoz_medians", PqHandle),
+               ("estimated_photoz_pdfs",    QPHandle)]
     
     ### configuration
     config_options = RailStage.config_options.copy()
@@ -74,6 +77,13 @@ class UMAPEstimator(RailStage):
         metric_p_knn         = StageParameter(int, 2),
         weighting_knn        = StageParameter(str, 'distance'),
         algorithm_knn        = StageParameter(str, 'ball_tree'),
+        
+        ### gaussian kernel density estimator parameters
+        # weighting_gauss_kde  = StageParameter(str, 'inverse_sq_dist'),
+        bw_method_gauss_kde  = StageParameter(str, 'silverman'),
+        zmax_gauss_kde       = StageParameter(float, 10.0),
+        precision_gauss_kde  = StageParameter(float, 0.001),
+        
         
         ### random state
         random_state         = StageParameter(int, 42)
@@ -145,17 +155,6 @@ class UMAPEstimator(RailStage):
             redshift = redshift
         )
         
-        # knn = NearestNeighbors(
-        #     n_neighbors = self.config.n_neighbors_knn,
-        #     metric = self.config.metric_knn
-        #     )
-        # knn.fit(embedding)
-        
-        # informed_knn = dict(
-        #     model = knn,
-        #     redshift = redshift
-        # )
-        
         self.add_data("informed_kNN_regressor", informed_kNN_regressor)
         
     
@@ -176,12 +175,27 @@ class UMAPEstimator(RailStage):
         estimated_embedding = reducer.transform(input_data)
         
         informed_kNN_regressor = self.get_data("informed_kNN_regressor")
-        photozs                = informed_kNN_regressor["model"].predict(estimated_embedding)
+        all_distances, all_indices = informed_kNN_regressor["model"].kneighbors(estimated_embedding)
         
-        # distances, indices = informed_knn["model"].kneighbors(estimated_embedding)
-        # photozs = np.median(informed_knn["redshift"][indices], axis = 1)
+        z_grid = np.arange(0, self.config.zmax_gauss_kde, self.config.precision_gauss_kde)
         
-        self.add_data("estimated_embedding", pd.DataFrame(estimated_embedding))
-        self.add_data("estimated_photozs",   pd.DataFrame({"z_phot": photozs}))
+        def generate_pdf(data_points, distances):
+            
+            kde = gaussian_kde(data_points,
+                               weights = 1/np.maximum(distances**2, 1e-10),
+                               bw_method = self.config.bw_method_gauss_kde)
+            
+            return kde(z_grid)
         
+        photoz_pdfs = np.array(
+            [generate_pdf(informed_kNN_regressor["redshift"][indices], distances)
+             for indices, distances in zip(all_indices, all_distances)])
+        photoz_cdfs = np.cumsum(photoz_pdfs, axis = -1)
+        photoz_cdfs /= photoz_cdfs[:, -1:]
+        photoz_medians = z_grid[np.argmax(photoz_cdfs >= 0.5, axis = 1)]
         
+        photoz_pdf_ensemble = qp.Ensemble(qp.interp, data = dict(xvals = z_grid, yvals = photoz_pdfs))
+        
+        self.add_data("estimated_embedding",        pd.DataFrame(estimated_embedding))
+        self.add_data("estimated_photoz_medians",   pd.DataFrame({"z_phot_median": photoz_medians}))
+        self.add_data("estimated_photoz_pdfs",      photoz_pdf_ensemble)
