@@ -44,11 +44,11 @@ class UMAPEstimator(RailStage):
     config_options = RailStage.config_options.copy()
     
     config_options.update(dict(
-        # UMAP parameters
+        ### UMAP parameters
         n_neighbors_umap     = StageParameter(int,   80),
         n_components         = StageParameter(int,   3),
         ambient_metric_umap  = StageParameter(str,   'euclidean'),
-        n_epochs             = StageParameter(int,   None),
+        n_epochs             = StageParameter(int,   -1),
         learning_rate        = StageParameter(float, 1.0),
         init                 = StageParameter(str,   'spectral'),
         min_dist             = StageParameter(float, 0.0),
@@ -59,18 +59,18 @@ class UMAPEstimator(RailStage):
         repulsion_strength   = StageParameter(float, 1.0),
         negative_sample_rate = StageParameter(int,   5),
         transform_queue_size = StageParameter(float, 4.0),
-        metric_kwds          = StageParameter(dict,  None),
+        # metric_kwds          = StageParameter(dict,  None),
         target_n_neighbors   = StageParameter(int,   -1),
         target_metric_umap   = StageParameter(str,   'categorical'),
-        target_metric_kwds   = StageParameter(dict,  None),
+        # target_metric_kwds   = StageParameter(dict,  None),
         target_weight        = StageParameter(float, 0.5),
         transform_seed       = StageParameter(int,   42),
         
-        # k-nearest neighbor clustering parameters
+        ### k-nearest neighbor clustering parameters
         n_neighbors_knn      = StageParameter(int, 10),
         metric_knn           = StageParameter(str, 'euclidean'),
         
-        # random state
+        ### random state
         random_state         = StageParameter(int, 42)
         ))
  
@@ -94,7 +94,7 @@ class UMAPEstimator(RailStage):
             metric               = metric, 
             n_neighbors          = self.config.n_neighbors_umap, 
             n_components         = self.config.n_components, 
-            n_epochs             = self.config.n_epochs, 
+            # n_epochs             = self.config.n_epochs, 
             learning_rate        = self.config.learning_rate, 
             init                 = self.config.init, 
             min_dist             = self.config.min_dist, 
@@ -105,10 +105,10 @@ class UMAPEstimator(RailStage):
             repulsion_strength   = self.config.repulsion_strength, 
             negative_sample_rate = self.config.negative_sample_rate, 
             transform_queue_size = self.config.transform_queue_size, 
-            metric_kwds          = self.config.metric_kwds, 
+            # metric_kwds          = self.config.metric_kwds, 
             target_n_neighbors   = self.config.target_n_neighbors, 
             target_metric        = self.config.target_metric_umap, 
-            target_metric_kwds   = self.config.target_metric_kwds, 
+            # target_metric_kwds   = self.config.target_metric_kwds, 
             target_weight        = self.config.target_weight, 
             transform_seed       = self.config.transform_seed, 
             random_state         = self.config.random_state
@@ -129,7 +129,7 @@ class UMAPEstimator(RailStage):
         
         informed_knn = dict(
             model = knn,
-            redshift = redshift.values
+            redshift = redshift
         )
         
         self.add_data("informed_knn", informed_knn)
