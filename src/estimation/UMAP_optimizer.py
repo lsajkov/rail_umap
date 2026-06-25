@@ -53,6 +53,17 @@ redshift          = h5py.File(redshift_filepath)['sfh_parameters'][:, -1]
 training_redshift   = redshift[:data_cut][training_indices]
 validation_redshift = redshift[:data_cut][~training_indices]
 
+def cde_loss(pz_ensemble, true_z):
+    
+    xvals = pz_ensemble.metadata['xvals']
+    yvals = pz_ensemble.objdata['yvals']
+    
+    pdf_at_true = np.array([np.interp(z, xvals, y)\
+        for z, y in zip(true_z, yvals)])
+    integral_sq = np.trapezoid(yvals**2, xvals, axis = 1)
+    
+    return np.mean(integral_sq - 2 * pdf_at_true)
+
 def objective(trial):
     
     RailStage.data_store = DataStore()
@@ -88,23 +99,31 @@ def objective(trial):
     estimator.set_data("estimation_phot_error", data = validation_data[phot_error_bands])
     estimator.UMAP_estimator()
     
-    evaluator = DistToPointEvaluator.make_stage(
-        name = "DistToPointEvaluator",
-        metrics = ["cdeloss"],
-        reference_dictionary_key = "true_z",
-        hdf5_groupname = "",
-        metric_integration_limits = [0, 3],
-        dx = 0.01,
-        output_mode = "return"
-    )
+    pz_pdfs = estimator.get_handle("estimated_photoz_pdfs").data
     
-    evaluation = evaluator.evaluate(estimator.get_handle('estimated_photoz_pdfs').data,
-                                     pd.DataFrame({"true_z": validation_redshift}))
+    # evaluator = DistToPointEvaluator.make_stage(
+    #     name = "DistToPointEvaluator",
+    #     metrics = ["cdeloss"],
+    #     reference_dictionary_key = "true_z",
+    #     hdf5_groupname = "",
+    #     metric_integration_limits = [0, 3],
+    #     dx = 0.01,
+    #     output_mode = "return"
+    # )
     
-    cdeloss = evaluation["summary"].read()['cdeloss'][0]
+    # evaluation = evaluator.evaluate(estimator.get_handle('estimated_photoz_pdfs').data,
+    #                                  pd.DataFrame({"true_z": validation_redshift}))
     
-    return cdeloss
+    # cdeloss = evaluation["summary"].read()['cdeloss'][0]
+    
+    return cde_loss(pz_pdfs, validation_redshift)
 
-study = optuna.create_study(direction = "minimize")
+storage = optuna.storages.RDBStorage("sqlite:////Users/leo/Projects/LBG_cosmology/optimization_trials/study.db")
+
+study = optuna.create_study(
+    study_name = "UMAP_optimization",
+    storage = storage,
+    direction = "minimize",
+    load_if_exists = True)
 
 study.optimize(objective, n_trials = 10)
