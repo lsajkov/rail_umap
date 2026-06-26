@@ -15,7 +15,7 @@ data_cut = sys.argv[1]
 data_cut = int(data_cut)
 
 ### Specify path to noisy catalog
-noisy_catalog_path = '/Users/leo/Projects/LBG_cosmology/simulated_catalogs/integrated_catalog_23apr26_noised_19Jun26.pq'
+noisy_catalog_path = "/pscratch/sd/s/sajkov/data/integrated_catalog_23apr26_noised_19Jun26.pq"
 
 ### Specify path to output photometry
 import time
@@ -45,7 +45,7 @@ photometry_bands = [key for key in training_data.keys()\
                         if (not key.endswith('_err')) and (key != 'Roman_F146')]
 phot_error_bands = [f"{key}_err" for key in photometry_bands]
 
-redshift_filepath = '/Users/leo/Projects/LBG_cosmology/surveys/pop-cosmos/mock_catalog/mock_catalog_Ch1_26.h5'
+redshift_filepath = '/pscratch/sd/s/sajkov/data/mock_catalog_Ch1_26.h5'
 redshift          = h5py.File(redshift_filepath)['sfh_parameters'][:, -1]
 
 training_redshift   = redshift[:data_cut][training_indices]
@@ -116,7 +116,7 @@ def objective(trial):
     
     return cde_loss(pz_pdfs, validation_redshift)
 
-storage = optuna.storages.RDBStorage("sqlite:////Users/leo/Projects/LBG_cosmology/optimization_trials/UMAP_optimization_datacut{data_cut:n}.db")
+storage = optuna.storages.RDBStorage("sqlite:////UMAP_optimization_datacut{data_cut:n}.db")
 
 study = optuna.create_study(
     study_name = f"UMAP_optimization_datacut{data_cut:n}",
