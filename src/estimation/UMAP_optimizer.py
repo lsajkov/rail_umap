@@ -5,13 +5,14 @@ from rail.core.data import PqHandle
 
 import numpy as np
 import h5py
-import pandas as pd
 import tables_io
 
 from UMAPEstimator import UMAPEstimator
-
-from rail.evaluation.dist_to_point_evaluator import DistToPointEvaluator
 import optuna
+
+import sys
+data_cut = sys.argv[1]
+data_cut = int(data_cut)
 
 ### Specify path to noisy catalog
 noisy_catalog_path = '/Users/leo/Projects/LBG_cosmology/simulated_catalogs/integrated_catalog_23apr26_noised_19Jun26.pq'
@@ -28,9 +29,6 @@ seed              = 42
 
 ### Load and split data
 data = tables_io.read(noisy_catalog_path)
-
-data_cut = int(1e3)
-# data_cut = -1
 data = data[:data_cut]
 
 training_indices = np.zeros(len(data), dtype = bool)
@@ -118,12 +116,12 @@ def objective(trial):
     
     return cde_loss(pz_pdfs, validation_redshift)
 
-storage = optuna.storages.RDBStorage("sqlite:////Users/leo/Projects/LBG_cosmology/optimization_trials/study.db")
+storage = optuna.storages.RDBStorage("sqlite:////Users/leo/Projects/LBG_cosmology/optimization_trials/UMAP_optimization_datacut{data_cut:n}.db")
 
 study = optuna.create_study(
-    study_name = "UMAP_optimization",
+    study_name = f"UMAP_optimization_datacut{data_cut:n}",
     storage = storage,
     direction = "minimize",
     load_if_exists = True)
 
-study.optimize(objective, n_trials = 10)
+study.optimize(objective, n_trials = 100)
