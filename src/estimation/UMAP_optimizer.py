@@ -7,12 +7,13 @@ import numpy as np
 import h5py
 import tables_io
 
-from UMAPEstimator import UMAPEstimator
-import optuna
-
 import sys
 data_cut = sys.argv[1]
 data_cut = int(data_cut)
+
+sys.path.insert(0, "$HOME/rail_umap/src/estimation")
+from UMAPEstimator import UMAPEstimator
+import optuna
 
 ### Specify path to noisy catalog
 noisy_catalog_path = "/pscratch/sd/s/sajkov/data/integrated_catalog_23apr26_noised_19Jun26.pq"
@@ -116,7 +117,7 @@ def objective(trial):
     
     return cde_loss(pz_pdfs, validation_redshift)
 
-storage = optuna.storages.RDBStorage("sqlite:////UMAP_optimization_datacut{data_cut:n}.db")
+storage = optuna.storages.RDBStorage(f"sqlite:////global/homes/s/sajkov/optimize_UMAP/UMAP_optimization_datacut{data_cut:n}.db")
 
 study = optuna.create_study(
     study_name = f"UMAP_optimization_datacut{data_cut:n}",
