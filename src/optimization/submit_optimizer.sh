@@ -4,39 +4,39 @@
 #SBATCH -C cpu
 #SBATCH -q regular
 #SBATCH -N 1
-#SBATCH -c 64
-#SBATCH -t 24:00:00
-#SBATCH -o logs/optimize_UMAP_%j.out
-#SBATCH -e logs/optimize_UMAP_%j.err
+#SBATCH -c 128
+#SBATCH -t 12:00:00
+#SBATCH --array=0-11
+#SBATCH -o logs/optimize_UMAP_%A_%a.out
+#SBATCH -e logs/optimize_UMAP_%A_%a.err
 
-module load python
-source activate rail
+source $(conda info --base)/etc/profile.d/conda.sh
+conda activate rail
 
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 10000
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 100000
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 500000
+CONFIGS=(LSST         LSST      \
+         LSSTRoman    LSSTRoman  \
+         LSSTRomanHSC LSSTRomanHSC \
+         HSC          HSC        \
+         RomanHSC     RomanHSC   \
+         Roman        Roman)
 
+DATA_CUTS=(10000 100000 \
+           10000 100000 \
+           10000 100000 \
+           10000 100000 \
+           10000 100000 \
+           10000 100000 )
 
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSSTRoman 10000
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSSTRoman 100000
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSSTRoman 500000
+CONFIG=${CONFIGS[$SLURM_ARRAY_TASK_ID]}
+DATA_CUT=${DATA_CUTS[$SLURM_ARRAY_TASK_ID]}
 
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSSTRomanHSC 10000
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSSTRomanHSC 100000
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSSTRomanHSC 500000
+N_WORKERS=8
+TRIALS_PER_WORKER=$((100 / N_WORKERS))
 
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 10000
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 100000
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 500000
+cd /global/homes/s/sajkov/rail_umap/src/optimization
+mkdir -p logs
 
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 10000
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 100000
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 500000
-
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 10000
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 100000
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 500000
-
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 10000
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 100000
-srun -n 1 python UMAP_optimizer.py 26Jun26 LSST 500000
+for i in $(seq 1 $N_WORKERS); do
+    python UMAP_optimizer.py 26Jun26 $CONFIG $DATA_CUT $TRIALS_PER_WORKER &
+done
+wait
