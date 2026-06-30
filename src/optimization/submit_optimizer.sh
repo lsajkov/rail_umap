@@ -10,8 +10,8 @@
 #SBATCH -o logs/optimize_UMAP_%A_%a.out
 #SBATCH -e logs/optimize_UMAP_%A_%a.err
 
-source $(conda info --base)/etc/profile.d/conda.sh
-conda activate rail
+module load python
+source activate rail
 
 CONFIGS=(LSST         LSST      \
          LSSTRoman    LSSTRoman  \
@@ -31,7 +31,7 @@ CONFIG=${CONFIGS[$SLURM_ARRAY_TASK_ID]}
 DATA_CUT=${DATA_CUTS[$SLURM_ARRAY_TASK_ID]}
 
 N_WORKERS=8
-TRIALS_PER_WORKER=$((100 / N_WORKERS))
+TRIALS_PER_WORKER=$((50 / N_WORKERS))
 
 cd /global/homes/s/sajkov/rail_umap/src/optimization
 mkdir -p logs
