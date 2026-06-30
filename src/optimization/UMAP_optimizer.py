@@ -7,19 +7,21 @@ import numpy as np
 import h5py
 import tables_io
 
+import os
+import sys
+date = sys.argv[1]
+configuration = sys.argv[2]
+data_cut = int(sys.argv[3])
+n_trials = int(sys.argv[4]) if len(sys.argv) > 4 else 100
+
+sys.path.insert(0, "/global/homes/s/sajkov/rail_umap/src/estimation")
 from UMAPEstimator import UMAPEstimator
 import optuna
 
-import sys
-data_cut = sys.argv[1]
-data_cut = int(data_cut)
-
 ### Specify path to noisy catalog
-noisy_catalog_path = '/Users/leo/Projects/LBG_cosmology/simulated_catalogs/integrated_catalog_23apr26_noised_19Jun26.pq'
+noisy_catalog_path = "/pscratch/sd/s/sajkov/data/integrated_catalog_23apr26_noised_19Jun26.pq"
 
 ### Specify path to output photometry
-import time
-date = time.strftime('%d%b%y', time.localtime())
 photoz_path = noisy_catalog_path.split('.pq')[0] + f'_UMAPphotoz_{date}.pq'
 
 ### Static parameters
@@ -27,29 +29,49 @@ training_fraction = 0.8
 metric            = "manhattan_weighted_linear"
 seed              = 42
 
-### Load and split data
+### Set up random generator
+rng = np.random.default_rng(seed = seed)
+
+### Load, magnitude-limit, and split data
 data = tables_io.read(noisy_catalog_path)
-data = data[:data_cut]
+i_band_cut = 27.5
+magnitude_cut_idx = np.where(data["LSST_i"] < i_band_cut)[0]
+data_magnitude_rand_idx = rng.choice(magnitude_cut_idx, size = int(1.25 * data_cut), replace = False)
+training_indices = data_magnitude_rand_idx[:data_cut]
+testing_indices = data_magnitude_rand_idx[data_cut:]
 
-training_indices = np.zeros(len(data), dtype = bool)
-training_indices[np.random.choice(len(data), size = int(training_fraction * len(data)),
-                 replace = False)] = True
+LSST_bands = [f"LSST_{band}" for band in "ugrizy"]
+Roman_bands = [f"Roman_{band}" for band in ["F106", "F129", "F158", "F184", "F213"]]
+HSC_bands = [f"HSC_MB_{band:02}" for band in range(16)]
 
-bands = [key for key in data.keys() if (not key.endswith('_err')) & (key != 'Roman_F146')]
-error_bands = [key for key in data.keys() if key.endswith('_err')]
+bands_dict = {"LSST":         LSST_bands,
+              "Roman":        Roman_bands,
+              "HSC":          HSC_bands,
+              "LSSTRoman":    LSST_bands  + Roman_bands,
+              "RomanHSC":     Roman_bands + HSC_bands,
+              "LSSTRomanHSC": LSST_bands  + Roman_bands + HSC_bands}
 
-validation_data = data[~training_indices]
-training_data   = data[training_indices]
+bands = bands_dict[configuration]
+error_bands = [key + "_err" for key in bands]
+
+print("Optimizing UMAP with bands:", bands)
+
+training_data   = data.iloc[training_indices]
+validation_data = data.iloc[testing_indices]
+
+print("Length of training data: ", len(training_data))
+print("\" \"   validation data: ", len(validation_data))
 
 photometry_bands = [key for key in training_data.keys()\
                         if (not key.endswith('_err')) and (key != 'Roman_F146')]
 phot_error_bands = [f"{key}_err" for key in photometry_bands]
 
-redshift_filepath = '/Users/leo/Projects/LBG_cosmology/surveys/pop-cosmos/mock_catalog/mock_catalog_Ch1_26.h5'
-redshift          = h5py.File(redshift_filepath)['sfh_parameters'][:, -1]
+redshift_filepath = '/pscratch/sd/s/sajkov/data/mock_catalog_Ch1_26.h5'
+with h5py.File(redshift_filepath) as f:
+    redshift = f['sps_parameters'][:, -1]
 
-training_redshift   = redshift[:data_cut][training_indices]
-validation_redshift = redshift[:data_cut][~training_indices]
+training_redshift   = redshift[training_indices]
+validation_redshift = redshift[testing_indices]
 
 def cde_loss(pz_ensemble, true_z):
     
@@ -99,29 +121,18 @@ def objective(trial):
     
     pz_pdfs = estimator.get_handle("estimated_photoz_pdfs").data
     
-    # evaluator = DistToPointEvaluator.make_stage(
-    #     name = "DistToPointEvaluator",
-    #     metrics = ["cdeloss"],
-    #     reference_dictionary_key = "true_z",
-    #     hdf5_groupname = "",
-    #     metric_integration_limits = [0, 3],
-    #     dx = 0.01,
-    #     output_mode = "return"
-    # )
-    
-    # evaluation = evaluator.evaluate(estimator.get_handle('estimated_photoz_pdfs').data,
-    #                                  pd.DataFrame({"true_z": validation_redshift}))
-    
-    # cdeloss = evaluation["summary"].read()['cdeloss'][0]
-    
     return cde_loss(pz_pdfs, validation_redshift)
 
-storage = optuna.storages.RDBStorage("sqlite:////Users/leo/Projects/LBG_cosmology/optimization_trials/UMAP_optimization_datacut{data_cut:n}.db")
+if not os.path.exists(f"/pscratch/sd/s/sajkov/UMAP_optimization/{date}"):
+    os.makedirs(f"/pscratch/sd/s/sajkov/UMAP_optimization/{date}", exist_ok=True)
+
+storage = optuna.storages.RDBStorage(f"sqlite:////pscratch/sd/s/sajkov/UMAP_optimization/{date}/UMAP_optimization_{configuration}.db")
 
 study = optuna.create_study(
-    study_name = f"UMAP_optimization_datacut{data_cut:n}",
+    study_name = f"UMAP_optimization_{configuration}_datacut{data_cut:n}",
     storage = storage,
+    sampler = optuna.samplers.TPESampler(seed = seed),
     direction = "minimize",
     load_if_exists = True)
 
-study.optimize(objective, n_trials = 100)
+study.optimize(objective, n_trials = n_trials)
